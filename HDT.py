@@ -40,22 +40,27 @@ class TriGatedFusion(nn.Module):
         layers = []
         in_dim = dim * 3
         for i in range(num_layers):
-            out_dim = hidden_dim if i < num_layers - 1 else dim
+            out_dim = hidden_dim if i < num_layers - 1 else dim * 3
             layers.append(nn.Linear(in_dim, out_dim))
             if i < num_layers - 1:
                 layers.append(nn.ReLU())
                 layers.append(nn.Dropout(dropout))
                 in_dim = hidden_dim
         self.mlp = nn.Sequential(*layers)
-        self.gate_norm = nn.LayerNorm(dim)
+        self.gate_norm = nn.LayerNorm(dim * 3)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, space_feat, amp_feat, phase_feat):
         concat = torch.cat([space_feat, amp_feat, phase_feat], dim=-1)  # [B, 3*dim]
         x = self.mlp(concat)
         x = self.gate_norm(x)
-        gates = self.sigmoid(x)  # [B, dim]
-        return gates * (space_feat + amp_feat + phase_feat)
+        gates = self.sigmoid(x)  # [B, 3*dim]
+        gate_space, gate_amp, gate_phase = torch.chunk(gates, chunks=3, dim=-1)
+        return (
+            gate_space * space_feat
+            + gate_amp * amp_feat
+            + gate_phase * phase_feat
+        )
 
 class Simple1DViT(nn.Module):
     def __init__(self, input_len=1024, patch_size=4, dim=768, depth=12, heads=12, mlp_dim=3072):
